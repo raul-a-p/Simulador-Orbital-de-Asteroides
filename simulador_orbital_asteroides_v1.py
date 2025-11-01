@@ -1816,6 +1816,7 @@ def mostrar_ajuda():
     ```python
     stats = simulacao_monte_carlo(n_simulacoes)
     plotar_resultados_monte_carlo(stats)
+    plotar_trajetorias_monte_carlo(stats)
     ```
     
     ⚡ CONSTANTES DISPONÍVEIS:
