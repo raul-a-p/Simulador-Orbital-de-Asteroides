@@ -960,73 +960,6 @@ def plotar_conservacao_energia(sistema: SistemaGravitacional):
     plt.tight_layout()
     plt.show()
 
-def criar_animacao(sistema: SistemaGravitacional, 
-                   arquivo: str = 'animacao.gif',
-                   fps: int = 30,
-                   duracao: int = 10):
-    """Cria uma animação das órbitas."""
-    fig, ax = plt.subplots(figsize=(10, 10))
-    
-    # Configurar limites
-    max_dist = 1.5 * UA
-    ax.set_xlim(-max_dist/UA, max_dist/UA)
-    ax.set_ylim(-max_dist/UA, max_dist/UA)
-    ax.set_xlabel('x (UA)', fontsize=12)
-    ax.set_ylabel('y (UA)', fontsize=12)
-    ax.set_title('Simulação Orbital em Tempo Real', fontsize=14, fontweight='bold')
-    ax.grid(True, alpha=0.3)
-    ax.axis('equal')
-    
-    # Objetos da animação
-    linhas = []
-    pontos = []
-    
-    for corpo in sistema.corpos:
-        linha, = ax.plot([], [], '-', color=corpo.cor, linewidth=1.5, 
-                        alpha=0.7, label=corpo.nome)
-        ponto, = ax.plot([], [], 'o', color=corpo.cor, 
-                        markersize=corpo.raio_visual)
-        linhas.append(linha)
-        pontos.append(ponto)
-    
-    ax.legend(loc='upper right', fontsize=10)
-    
-    # Número total de frames
-    n_frames = fps * duracao
-    n_pontos = len(sistema.corpos[0].historico_posicao)
-    indices = np.linspace(0, n_pontos-1, n_frames, dtype=int)
-    
-    def init():
-        for linha, ponto in zip(linhas, pontos):
-            linha.set_data([], [])
-            ponto.set_data([], [])
-        return linhas + pontos
-    
-    def animate(frame):
-        idx = indices[frame]
-        
-        for i, corpo in enumerate(sistema.corpos):
-            if idx < len(corpo.historico_posicao):
-                # Trajetória até o momento
-                x_hist = [p[0]/UA for p in corpo.historico_posicao[:idx+1]]
-                y_hist = [p[1]/UA for p in corpo.historico_posicao[:idx+1]]
-                linhas[i].set_data(x_hist, y_hist)
-                
-                # Posição atual
-                pontos[i].set_data([corpo.historico_posicao[idx][0]/UA], 
-                                  [corpo.historico_posicao[idx][1]/UA])
-        
-        return linhas + pontos
-    
-    anim = FuncAnimation(fig, animate, init_func=init, 
-                        frames=n_frames, interval=1000/fps, 
-                        blit=True, repeat=True)
-    
-    print(f"Criando animação... (isso pode levar alguns minutos)")
-    anim.save(arquivo, writer='pillow', fps=fps)
-    print(f"✓ Animação salva em: {arquivo}")
-    
-    plt.close()
 
 print("✓ Funções de visualização criadas!")
 
@@ -1838,7 +1771,6 @@ def mostrar_ajuda():
     - plotar_trajetorias(sistema)           → Órbitas em 2D
     - plotar_distancia_temporal(sistema)    → Distância vs tempo
     - plotar_conservacao_energia(sistema)   → Validação física
-    - criar_animacao(sistema, arquivo)      → Animação GIF
     - plotar_resultados_monte_carlo(stats)  → Análise estatística
     
     🎲 SIMULAÇÃO MONTE CARLO:
@@ -1862,8 +1794,10 @@ def mostrar_ajuda():
     - executar_todos_testes()        → Executa todos os testes
     
     📖 EXEMPLOS DE USO:
+
+    executar_simulacao_interativa()  - Menu interativo completo
     
-    Exemplo 1 - Simulação Básica:
+    Simulação Básica:
     ```python
     sistema = criar_sistema_terra_sol()
     resultado = sistema.simular(2 * ANOS_EM_SEGUNDOS)
@@ -1871,16 +1805,16 @@ def mostrar_ajuda():
     plotar_trajetorias(sistema)
     ```
     
-    Exemplo 2 - Apophis:
+    Apophis:
     ```python
     sistema = criar_sistema_apophis()
     resultado = sistema.simular(3 * ANOS_EM_SEGUNDOS)
     plotar_distancia_temporal(sistema)
     ```
     
-    Exemplo 3 - Monte Carlo:
+    Monte Carlo:
     ```python
-    stats = simulacao_monte_carlo(n_simulacoes=100)
+    stats = simulacao_monte_carlo(n_simulacoes)
     plotar_resultados_monte_carlo(stats)
     ```
     
