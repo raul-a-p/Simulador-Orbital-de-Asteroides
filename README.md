@@ -22,15 +22,15 @@ Este simulador foi desenvolvido como projeto de Computação Científica na disc
 ## 💻 Uso
 
 Versões do simulador:
-- Versão Python: instale o "simulador_orbital_asteroides_v2" e confira instruções de uso em "exemplos_v2"
-- Versão Web: [Simulador de Asteroides](https://asteroidsim-kp2wuqcw.manus.space/) (em desenvolvimento)
+- Versão Python: instale o "simulador_orbital_asteroides_v2" e confira instruções de uso em "exemplos_v2" (recomendado)
+- Versão Web: [Simulador de Asteroides](https://orbitalapp-tte5ngjs.manus.space/) (em desenvolvimento)
 
 
 ## 📊 Funcionalidades
 
 ### Cenários Pré-configurados
 - 🌍 **Terra-Sol**: Validação do integrador
-- ☄️ **Apophis**: Asteroide real (aproximação 2029)
+- ☄️ **Apophis**: Asteroide real (aproximação em 2029)
 - 💥 **Impacto**: Colisão entre Terra e asteroide
 - 🌙 **Terra-Lua**: Sistema com Lua e asteroide customizável
 - 🪐 **Sistema Solar**: 8 planetas + cometa interestelar
@@ -64,41 +64,57 @@ simulador_orbital_asteroides_v2.py
 ├── PARTE 1: Imports e Constantes
 │   ├── G, UA, M_SOL, M_TERRA, R_TERRA, M_LUA
 │   └── RAIOS_COLISAO
-├── PARTE 2: Classe CorpoCeleste
-│   ├── Atributos: nome, massa, posicao, velocidade
-│   └── Métodos: salvar_estado(), energia_cinetica()
-├── PARTE 3: Classe ResultadoSimulacao
-│   ├── corpo_colidido
-│   └── gerar_relatorio()
-├── PARTE 4: Classe SistemaGravitacional
-│   ├── calcular_forca_gravitacional()
-│   ├── integrador_rk4()
-│   ├── simular()
-│   └── detectar_colisoes_e_aproximacao()
-├── PARTE 5: Funções de Configuração
+├── PARTE 2: Classes Principais
+│   ├── CorpoCeleste
+│   │   ├── Atributos: nome, massa, posicao, velocidade
+│   │   └── Métodos: salvar_estado(), energia_cinetica()
+│   ├── ResultadoSimulacao
+│   │   ├── corpo_colidido
+│   │   └── gerar_relatorio()
+│   └── SistemaGravitacional
+│       ├── calcular_forca_gravitacional()
+│       ├── integrador_rk4()
+│       ├── simular()
+│       └── detectar_colisoes_e_aproximacao()
+├── PARTE 3: Funções de Configuração
 │   ├── criar_sistema_base()
 │   ├── criar_sistema_terra_sol()
 │   ├── criar_sistema_apophis()
 │   ├── criar_sistema_impacto(incluir_lua=True/False)
 │   ├── criar_sistema_com_lua()
+│   ├── criar_sistema_personalizado()
+│   ├── criar_sistema_aleatorio()
 │   └── criar_sistema_solar_completo()
-├── PARTE 6: Funções de Visualização
+├── PARTE 4: Funções de Visualização
 │   ├── plotar_trajetorias()
+│   ├── plotar_trajetorias_sistema_solar()
 │   ├── plotar_animacao_interativa()
 │   ├── plotar_distancia_temporal()
 │   └── plotar_conservacao_energia()
-├── PARTE 7: Simulação Monte Carlo
-│   ├── simulacao_monte_carlo()
+├── PARTE 5: Simulação Monte Carlo
+│   ├── simulacao_monte_carlo(massa_base, posicao_base, velocidade_base)
 │   ├── plotar_resultados_monte_carlo()
 │   └── plotar_trajetorias_monte_carlo()
-├── PARTE 8: I/O (JSON)
+├── PARTE 6: I/O (JSON)
 │   ├── salvar_configuracao()
 │   ├── carregar_configuracao()
 │   └── exportar_trajetorias()
-├── PARTE 9: Menu Interativo
+├── PARTE 7: Menu Interativo
+│   ├── menu_principal()
 │   └── executar_simulacao_interativa()
-└── PARTE 10: Testes e Documentação
-    ├── executar_todos_testes()
+├── PARTE 8: Testes de Validação
+│   ├── teste_conservacao_energia()
+│   ├── teste_terceira_lei_kepler()
+│   ├── teste_orbita_estavel()
+│   ├── teste_conservacao_momento_angular()
+│   └── executar_todos_testes()
+├── PARTE 9: Exemplos de Uso
+│   ├── exemplo_basico()
+│   ├── exemplo_apophis()
+│   ├── exemplo_impacto()
+│   ├── exemplo_monte_carlo()
+│   └── exemplo_personalizado()
+└── PARTE 10: Documentação e Ajuda
     └── mostrar_ajuda()
 ```
 
@@ -107,42 +123,56 @@ simulador_orbital_asteroides_v2.py
 Exemplo de Saída (Apophis)
 ```
 ======================================================================
-                   RELATÓRIO DA SIMULAÇÃO ORBITAL                    
+                    RELATÓRIO DA SIMULAÇÃO ORBITAL                    
 ======================================================================
 
 INFORMAÇÕES TEMPORAIS:
   Tempo total simulado: 3.00 anos
-  Número de passos: 26,304
+  Número de passos: 26,298
 
 APROXIMAÇÃO MÍNIMA:
-  Distância mínima: 38,400.00 km
-  Distância em raios terrestres: 6.03 R⊕
-  Tempo da aproximação: 1.2456 anos
-  Velocidade relativa: 12.45 km/s
+  Distância mínima: 38371.97 km
+  Distância em raios terrestres: 6.02 R⊕
+  Tempo: 2.4118 anos
+  Velocidade relativa: 7.18 km/s
 
 ✓ Nenhuma colisão detectada
 
 VALIDAÇÃO FÍSICA:
-  Energia inicial: -4.456789e+33 J
-  Energia final: -4.456791e+33 J
-  Erro relativo de energia: 4.48e-07
-  ✓ Energia conservada dentro da tolerância
+  Erro relativo de energia: 1.02e-14
+  ✓ Energia conservada
+  Erro relativo de momento angular: 4.54e-15
+  ✓ Momento angular conservado
 ```
 
 Exemplo de Saída (Colisão)
 ```
 ======================================================================
+                    RELATÓRIO DA SIMULAÇÃO ORBITAL                    
+======================================================================
+
+INFORMAÇÕES TEMPORAIS:
+  Tempo total simulado: 0.17 anos
+  Número de passos: 10,519
+
+APROXIMAÇÃO MÍNIMA:
+  Distância mínima: 2420.69 km
+  Distância em raios terrestres: 0.38 R⊕
+  Tempo: 0.1696 anos
+  Velocidade relativa: 59.40 km/s
+
 ⚠️ COLISÃO COM A TERRA!
-  Tempo: 45.3 dias
-  Velocidade: 28.45 km/s
-  Ângulo: 65.23°
-  Energia: 4.05e+20 J
-  TNT equivalente: 9.68e+04 Mt
-  Raio da cratera: 12.34 km
+  Tempo: 62.0 dias
+  Velocidade: 66.12 km/s
+  Ângulo: 47.72°
+  Energia: 1.09e+18 J
+  TNT equivalente: 2.61e+02 Mt
+  Raio da cratera: 22.77 km
   Corpo: Terra
 
 VALIDAÇÃO FÍSICA:
-  Erro relativo de energia: 3.21e-07
+  Erro relativo de energia: -4.35e-15
   ✓ Energia conservada
-======================================================================
+  Erro relativo de momento angular: 2.73e-15
+  ✓ Momento angular conservado
 ```
