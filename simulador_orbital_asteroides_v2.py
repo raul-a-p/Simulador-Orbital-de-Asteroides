@@ -174,6 +174,9 @@ class ResultadoSimulacao:
             f"  Erro relativo de energia: {self.erro_energia_relativo:.2e}",
             "  ✓ Energia conservada" if abs(self.erro_energia_relativo) < TOLERANCIA_ENERGIA 
             else "  ⚠️ Violação na conservação de energia",
+            f"  Erro relativo de momento angular: {self.erro_momento_relativo:.2e}",
+            "  ✓ Momento angular conservado" if abs(self.erro_momento_relativo) < TOLERANCIA_ENERGIA 
+            else "  ⚠️ Violação na conservação do momento angular",
             "", "OBSERVAÇÃO:",
             "🔵 Posição inicial: círculo",
             "⬛ Posição final: quadrado",
@@ -181,12 +184,6 @@ class ResultadoSimulacao:
         ])
         
         return "\n".join(linhas)
-
-print("✓ Classes definidas!")
-
-# ==============================================================================
-# PARTE 3: SISTEMA GRAVITACIONAL
-# ==============================================================================
 
 class SistemaGravitacional:
     """Gerencia sistema de múltiplos corpos (VERSÃO OTIMIZADA)."""
@@ -352,20 +349,56 @@ class SistemaGravitacional:
     
     def calcular_parametros_impacto(self, alvo: CorpoCeleste, asteroide: CorpoCeleste, v_relativa: np.ndarray):
         """Calcula parâmetros físicos do impacto."""
+    
         v_impacto = np.linalg.norm(v_relativa)
         self.resultado.velocidade_impacto = v_impacto
-        self.resultado.energia_impacto = 0.5 * asteroide.massa * v_impacto**2
-        self.resultado.equivalente_tnt = self.resultado.energia_impacto / 4.184e15
-        
+    
+        energia = 0.5 * asteroide.massa * v_impacto**2
+        self.resultado.energia_impacto = energia
+    
+        # equivalente TNT (1 megaton = 4.184e15 J)
+        self.resultado.equivalente_tnt = energia / 4.184e15
+    
+        # Normal local da superfície = direção do ponto de impacto para o centro do alvo
         r_vec = asteroide.posicao - alvo.posicao
         if np.linalg.norm(r_vec) > 0:
-            cos_angulo = np.dot(v_relativa, r_vec) / (v_impacto * np.linalg.norm(r_vec))
-            self.resultado.angulo_impacto = np.degrees(np.arccos(np.clip(cos_angulo, -1, 1)))
-        
-        densidade_asteroide = 3000
+    
+            # Normal local (vertical local)
+            n = r_vec / np.linalg.norm(r_vec)
+    
+            # Vel ocidade de impacto ***em direção ao solo*** é -v_relativa
+            cos_theta = np.dot(-v_relativa, n) / (v_impacto * 1.0)
+    
+            # Corrige erros numéricos
+            cos_theta = np.clip(cos_theta, -1.0, 1.0)
+    
+            # θ = 0° → impacto vertical; 90° → impacto tangencial
+            angulo = np.degrees(np.arccos(cos_theta))
+            self.resultado.angulo_impacto = angulo
+    
+        # Raio de cratera: modelo π-scaling simplificado
+        # Densidades típicas
+        dens_proj = 3000.0       # kg/m³ asteroide rochoso
+        dens_alvo = 2700.0       # kg/m³ rocha/superfície terrestre
         g = 9.81
-        self.resultado.raio_cratera = (1.8 * (densidade_asteroide**(-1/3)) * 
-                                      (asteroide.massa**(1/3)) * (v_impacto**(2/3)) * (g**(-1/3)))
+    
+        # Raio equivalente do projétil (assume esfera)
+        volume = asteroide.massa / dens_proj
+        raio_proj = (3 * volume / (4 * np.pi))**(1/3)
+    
+        # Modelo dimensional básico + correção de ângulo
+        # Baseado nas dependências da lei π (Holsapple/Collins)
+        # D ~ a * v^(2/3) * g^(-1/3) * (ρp/ρt)^(-1/3)
+        D0 = 2 * raio_proj * (v_impacto**(2/3)) * (g**(-1/3)) * (dens_proj/dens_alvo)**(-1/3)
+    
+        # Correção para impacto oblíquo (comportamento ~ sin(θ)^(1/3))
+        ang_rad = np.radians(self.resultado.angulo_impacto)
+        angle_factor = (np.sin(ang_rad))**(1/3)
+    
+        D_final = D0 * angle_factor   # Diâmetro final aproximado
+        raio_final = D_final / 2
+    
+        self.resultado.raio_cratera = raio_final
     
     def simular(self, tempo_total: float, progresso: bool = True):
         """Executa a simulação."""
@@ -406,6 +439,15 @@ class SistemaGravitacional:
                                                  self.resultado.energia_inicial) / 
                                                 abs(self.resultado.energia_inicial))
         self.resultado.momento_angular_final = self.momento_angular_total()
+        
+        # Calcular erro do momento angular
+        L_inicial = np.linalg.norm(self.resultado.momento_angular_inicial)
+        L_final = np.linalg.norm(self.resultado.momento_angular_final)
+        if L_inicial > 0:
+            self.resultado.erro_momento_relativo = abs(L_final - L_inicial) / L_inicial
+        else:
+            self.resultado.erro_momento_relativo = 0.0
+        
         self.resultado.tempo_simulacao = self.tempo_atual
         
         if progresso:
@@ -413,10 +455,10 @@ class SistemaGravitacional:
         
         return self.resultado
 
-print("✓ SistemaGravitacional refatorado!")
+print("✓ Classes definidas!")
 
 # ==============================================================================
-# PARTE 4: FUNÇÕES DE CONFIGURAÇÃO
+# PARTE 3: FUNÇÕES DE CONFIGURAÇÃO
 # ==============================================================================
 
 def criar_sistema_base(dt: float, incluir_lua: bool = False, 
@@ -469,17 +511,94 @@ def criar_sistema_terra_sol(dt: float = 3600) -> SistemaGravitacional:
     return criar_sistema_base(dt, incluir_lua=False, config_asteroide=None)
 
 def criar_sistema_apophis(dt: float = 3600) -> SistemaGravitacional:
-    """Asteroide Apophis."""
-    a, e = 0.92 * UA, 0.19
-    r = a * (1 - e)
-    v = np.sqrt(G * M_SOL * (2/r - 1/a))
+    """
+    Asteroide Apophis - aproximação 2029.
+    Usa elementos orbitais reais e posiciona Terra e Apophis 
+    para simular a aproximação de 2029.
+    """
+    # ==================================================
+    # ELEMENTOS ORBITAIS REAIS DO APOPHIS (época J2000)
+    # Fonte: JPL Horizons / Small-Body Database
+    # ==================================================
+    a_apophis = 0.9224 * UA  # Semi-eixo maior
+    e_apophis = 0.191        # Excentricidade
     
-    config = {
-        'massa': 6.1e10,
-        'posicao': [r * 0.95, r * 0.1, 0],
-        'velocidade': [-v * 0.15, v * 0.98, 0]
-    }
-    return criar_sistema_base(dt, incluir_lua=False, config_asteroide=config)
+    
+    # Posição da Terra (em 2027): começar em t=0
+    # Terra em órbita circular a 1 UA
+    angulo_terra = np.radians(0)  # Começar em x positivo
+    r_terra = UA
+    v_orbital_terra = np.sqrt(G * M_SOL / r_terra)
+    
+    pos_terra = np.array([r_terra * np.cos(angulo_terra), 
+                          r_terra * np.sin(angulo_terra), 
+                          0])
+    vel_terra = np.array([-v_orbital_terra * np.sin(angulo_terra), 
+                          v_orbital_terra * np.cos(angulo_terra), 
+                          0])
+    
+    nu_apophis = np.radians(180)
+    
+    # Raio orbital do Apophis nessa posição
+    r_apophis = a_apophis * (1 - e_apophis**2) / (1 + e_apophis * np.cos(nu_apophis))
+    
+    # Velocidade orbital (equação vis-viva)
+    v_apophis_mag = np.sqrt(G * M_SOL * (2/r_apophis - 1/a_apophis))
+    
+    angulo_apophis = np.radians(210)
+    
+    pos_apophis = np.array([r_apophis * np.cos(angulo_apophis),
+                           r_apophis * np.sin(angulo_apophis),
+                           0])
+    
+    vel_apophis = np.array([-v_apophis_mag * np.sin(angulo_apophis) * 1.060243,
+                            v_apophis_mag * np.cos(angulo_apophis) * 0.97,
+                            0])
+    
+    sistema = SistemaGravitacional(dt=dt)
+    
+    # Sol
+    sistema.adicionar_corpo(CorpoCeleste(
+        nome="Sol",
+        massa=M_SOL,
+        posicao=[0, 0, 0],
+        velocidade=[0, 0, 0],
+        cor='yellow',
+        raio_visual=20
+    ))
+    
+    # Terra
+    sistema.adicionar_corpo(CorpoCeleste(
+        nome="Terra",
+        massa=M_TERRA,
+        posicao=pos_terra.tolist(),
+        velocidade=vel_terra.tolist(),
+        cor='blue',
+        raio_visual=10
+    ))
+    
+    # Apophis
+    sistema.adicionar_corpo(CorpoCeleste(
+        nome="Asteroide",
+        massa=6.1e10,  # ~370m de diâmetro
+        posicao=pos_apophis.tolist(),
+        velocidade=vel_apophis.tolist(),
+        cor='red',
+        raio_visual=7
+    ))
+    
+    print(f"\n☄️ ASTEROIDE APOPHIS (99942)")
+    print(f"   Semi-eixo maior: {a_apophis/UA:.4f} UA")
+    print(f"   Excentricidade: {e_apophis:.3f}")
+    print(f"   Massa: {6.1e10:.2e} kg (~370m diâmetro)")
+    print(f"\n   CONDIÇÕES INICIAIS:")
+    print(f"   Terra: ({pos_terra[0]/UA:.3f}, {pos_terra[1]/UA:.3f}) UA")
+    print(f"   Apophis: ({pos_apophis[0]/UA:.3f}, {pos_apophis[1]/UA:.3f}) UA")
+    print(f"   Velocidade Apophis: {np.linalg.norm(vel_apophis)/1000:.2f} km/s")
+    print(f"\n   ⏱️ Simule por ~3 anos para observar a aproximação")
+    print(f"   📏 Distância esperada: entre 5.62R⊕ e 6.30R⊕ (literatura)")
+    
+    return sistema
 
 def criar_sistema_impacto(dt: float = 900, incluir_lua: bool = False) -> SistemaGravitacional:
     """Cenário de impacto (funciona com ou sem Lua)"""
@@ -786,7 +905,7 @@ def criar_sistema_solar_completo(asteroide_config: str = "padrao", dt: float = N
 print("✓ Funções de configuração criadas!")
 
 # ==============================================================================
-# PARTE 5: FUNÇÕES DE VISUALIZAÇÃO
+# PARTE 4: FUNÇÕES DE VISUALIZAÇÃO
 # ==============================================================================
 
 def plotar_trajetorias(sistema: SistemaGravitacional, 
@@ -1307,18 +1426,30 @@ def plotar_animacao_interativa(sistema: SistemaGravitacional,
 
 print("✓ Funções de visualização criadas!")
 
-
 # ==============================================================================
-# CÉLULA 12: SIMULAÇÃO MONTE CARLO
+# PARTE 5: SIMULAÇÃO MONTE CARLO
 # ==============================================================================
 
 def simulacao_monte_carlo(n_simulacoes: int = 100,
                          variacao_posicao: float = 0.01,
                          variacao_velocidade: float = 0.01,
                          tempo_total: float = 2 * ANOS_EM_SEGUNDOS,
+                         massa_base: float = None,
+                         posicao_base: List[float] = None,
+                         velocidade_base: List[float] = None,
                          seed: Optional[int] = None) -> Dict:
     """
     Executa múltiplas simulações com variações nas condições iniciais.
+    
+    Parâmetros:
+        n_simulacoes: Número de simulações
+        variacao_posicao: Variação percentual na posição
+        variacao_velocidade: Variação percentual na velocidade
+        tempo_total: Tempo de simulação
+        massa_base: Massa do asteroide
+        posicao_base: Posição inicial [x, y, z]
+        velocidade_base: Velocidade inicial [vx, vy, vz]
+        seed: Semente para reprodutibilidade
     """
     if seed is not None:
         np.random.seed(seed)
@@ -1334,23 +1465,42 @@ def simulacao_monte_carlo(n_simulacoes: int = 100,
     
     # Armazenar trajetórias de todos os asteroides
     trajetorias_asteroides = []
-    sistema_referencia = None  # Guardar o primeiro sistema para Terra e Sol
+    sistema_referencia = None
     
-    # Sistema base
-    sistema_base = criar_sistema_apophis()
-    asteroide_base = next(c for c in sistema_base.corpos if c.nome == "Asteroide")
+    # Definir valores base
+    if massa_base is None or posicao_base is None or velocidade_base is None:
+        sistema_base = criar_sistema_apophis()
+        asteroide_base = next(c for c in sistema_base.corpos if c.nome == "Asteroide")
+        
+        if massa_base is None:
+            massa_base = asteroide_base.massa
+        if posicao_base is None:
+            posicao_base = asteroide_base.posicao.copy()
+        else:
+            posicao_base = np.array(posicao_base)
+        if velocidade_base is None:
+            velocidade_base = asteroide_base.velocidade.copy()
+        else:
+            velocidade_base = np.array(velocidade_base)
+    else:
+        posicao_base = np.array(posicao_base)
+        velocidade_base = np.array(velocidade_base)
     
-    pos_base = asteroide_base.posicao.copy()
-    vel_base = asteroide_base.velocidade.copy()
-    massa_base = asteroide_base.massa
+    print(f"\nCONDIÇÕES BASE:")
+    print(f"  Massa: {massa_base:.2e} kg")
+    print(f"  Posição: ({posicao_base[0]/UA:.4f}, {posicao_base[1]/UA:.4f}, {posicao_base[2]/UA:.4f}) UA")
+    print(f"  Velocidade: ({velocidade_base[0]/1000:.2f}, {velocidade_base[1]/1000:.2f}, {velocidade_base[2]/1000:.2f}) km/s")
+    print(f"  Variação posição: ±{variacao_posicao*100:.1f}%")
+    print(f"  Variação velocidade: ±{variacao_velocidade*100:.1f}%")
+    print()
     
     for i in range(n_simulacoes):
         # Variações aleatórias
         delta_pos = np.random.normal(0, variacao_posicao, 3)
         delta_vel = np.random.normal(0, variacao_velocidade, 3)
         
-        nova_pos = pos_base * (1 + delta_pos)
-        nova_vel = vel_base * (1 + delta_vel)
+        nova_pos = posicao_base * (1 + delta_pos)
+        nova_vel = velocidade_base * (1 + delta_vel)
         
         # Criar sistema com variação
         sistema = criar_sistema_personalizado(massa_base, nova_pos.tolist(), nova_vel.tolist())
@@ -1652,7 +1802,7 @@ print("✓ Funções de I/O criadas!")
 
 
 # ==============================================================================
-# CÉLULA 14: INTERFACE DE MENU INTERATIVO
+# PARTE 7: INTERFACE DE MENU INTERATIVO
 # ==============================================================================
 
 def menu_principal():
@@ -1739,7 +1889,7 @@ def executar_simulacao_interativa():
             dt = float(input("Passo temporal dt (segundos) [padrão: 3600]: ") or "3600")
             sistema = criar_sistema_apophis(dt=dt)
             
-            tempo = float(input("Tempo de simulação (anos): ") or "2")
+            tempo = float(input("Tempo de simulação (anos): ") or "3")
             tempo_total = tempo * ANOS_EM_SEGUNDOS
             
             resultado = sistema.simular(tempo_total)
@@ -1847,12 +1997,31 @@ def executar_simulacao_interativa():
                 plotar_trajetorias(sistema, "Simulação com Condições Aleatórias")
         
         elif opcao == 'f':
-            print("\n>>> Simulação Monte Carlo")
+            print("\nInsira os parâmetros do asteroide:")
             
-            n_sim = int(input("Número de simulações [mínimo 10]: ") or "100")
-            var_pos = float(input("Variação em posição (%): ") or "1") / 100
-            var_vel = float(input("Variação em velocidade (%): ") or "1") / 100
-            tempo = float(input("Tempo por simulação (anos): ") or "2")
+            massa_base = float(input("  Massa (kg) [ex: 6.1e10]: ") or "6.1e10")
+            
+            print("  Posição inicial (UA):")
+            px = float(input("    x: ") or "0.92") * UA
+            py = float(input("    y: ") or "0.1") * UA
+            pz = float(input("    z: ") or "0") * UA
+            posicao_base = [px, py, pz]
+            
+            print("  Velocidade inicial (m/s):")
+            vx = float(input("    vx: ") or "-5000")
+            vy = float(input("    vy: ") or "28000")
+            vz = float(input("    vz: ") or "0")
+            velocidade_base = [vx, vy, vz]
+            
+            print(f"\n✓ Configuração personalizada definida")
+            print(f"  Posição: ({px/UA:.3f}, {py/UA:.3f}, {pz/UA:.3f}) UA")
+            print(f"  Velocidade: ({vx/1000:.2f}, {vy/1000:.2f}, {vz/1000:.2f}) km/s")
+            
+            print("\nParâmetros da simulação Monte Carlo:")
+            n_sim = int(input("  Número de simulações [mínimo 10]: ") or "10")
+            var_pos = float(input("  Variação em posição (%): ") or "1") / 100
+            var_vel = float(input("  Variação em velocidade (%): ") or "1") / 100
+            tempo = float(input("  Tempo por simulação (anos): ") or "2")
             
             tempo_total = tempo * ANOS_EM_SEGUNDOS
             
@@ -1860,7 +2029,10 @@ def executar_simulacao_interativa():
                 n_simulacoes=n_sim,
                 variacao_posicao=var_pos,
                 variacao_velocidade=var_vel,
-                tempo_total=tempo_total
+                tempo_total=tempo_total,
+                massa_base=massa_base,
+                posicao_base=posicao_base,
+                velocidade_base=velocidade_base
             )
             
             plotar_resultados_monte_carlo(estatisticas)
@@ -1994,7 +2166,7 @@ def executar_simulacao_interativa():
                 dt = float(input("  dt (segundos) [padrão: 7200]: ") or "7200")
                 sistema = criar_sistema_solar_completo(ast_config, dt=dt)
             
-            tempo = float(input("\nTempo de simulação (anos) [sugerido: 5]: ") or str(tempo_sugerido))
+            tempo = float(input("\nTempo de simulação (anos) [sugerido: 5]: ") or "5")
             tempo_total = tempo * ANOS_EM_SEGUNDOS
             
             print("\n🚀 Iniciando simulação...")
@@ -2020,9 +2192,8 @@ def executar_simulacao_interativa():
 
 print("✓ Interface de menu criada!")
 
-
 # ==============================================================================
-# PARTE 7: TESTES DE VALIDAÇÃO
+# PARTE 8: TESTES DE VALIDAÇÃO
 # ==============================================================================
 
 def teste_conservacao_energia():
@@ -2105,6 +2276,31 @@ def teste_orbita_estavel():
     
     return variacao < 0.001
 
+def teste_conservacao_momento_angular():
+    """Testa a conservação do momento angular."""
+    print("\nTESTE 4: Conservação do Momento Angular")
+    print("="*70)
+    
+    sistema = criar_sistema_terra_sol()
+    resultado = sistema.simular(2 * ANOS_EM_SEGUNDOS, progresso=False)
+    
+    L_inicial = np.linalg.norm(resultado.momento_angular_inicial)
+    L_final = np.linalg.norm(resultado.momento_angular_final)
+    
+    erro_momento = abs(L_final - L_inicial) / abs(L_inicial)
+    
+    print(f"Momento angular inicial: {L_inicial:.6e} kg·m²/s")
+    print(f"Momento angular final:   {L_final:.6e} kg·m²/s")
+    print(f"Erro relativo:           {erro_momento:.6e}")
+    print(f"Tolerância:              {TOLERANCIA_ENERGIA:.6e}")
+    
+    if erro_momento < TOLERANCIA_ENERGIA:
+        print("✓ TESTE PASSOU: Momento angular conservado!")
+    else:
+        print("✗ TESTE FALHOU: Violação na conservação do momento angular!")
+    
+    return erro_momento < TOLERANCIA_ENERGIA
+    
 def executar_todos_testes():
     """Executa todos os testes de validação."""
     print("\n" + "="*70)
@@ -2116,6 +2312,7 @@ def executar_todos_testes():
     resultados.append(teste_conservacao_energia())
     resultados.append(teste_terceira_lei_kepler())
     resultados.append(teste_orbita_estavel())
+    resultados.append(teste_conservacao_momento_angular())
     
     print("\n" + "="*70)
     print("RESUMO DOS TESTES".center(70))
@@ -2135,9 +2332,8 @@ def executar_todos_testes():
 
 print("✓ Testes de validação criados!")
 
-
 # ==============================================================================
-# PARTE 8: EXEMPLOS DE USO
+# PARTE 9: EXEMPLOS DE USO
 # ==============================================================================
 
 def exemplo_basico():
@@ -2236,9 +2432,8 @@ def exemplo_personalizado(massa = 5e11, posicao = [1.2 * UA, 0.1 * UA, 0], veloc
 
 print("✓ Exemplos de uso criados!")
 
-
 # ==============================================================================
-# PARTE 9: MENU DE EXECUÇÃO RÁPIDA
+# PARTE 10: DOCUMENTAÇÃO E AJUDA
 # ==============================================================================
 
 print("\n" + "="*70)
@@ -2247,7 +2442,7 @@ print("="*70)
 print("\n✓ Todas as funções carregadas com sucesso!")
 print("\nOpções de execução:")
 print("  1. executar_simulacao_interativa()  - Menu interativo completo")
-print("  2. exemplo_basico()                 - Órbita da Terra (validação)")
+print("  2. exemplo_basico()                 - Órbita da Terra")
 print("  3. exemplo_apophis()                - Asteroide Apophis")
 print("  4. exemplo_impacto()                - Cenário de impacto")
 print("  5. exemplo_monte_carlo()            - Análise estatística")
@@ -2257,10 +2452,6 @@ print("\nExecute qualquer uma dessas funções!")
 print('Obs.: "%matplotlib widget" necessário para animações no Jupyter')
 print("="*70)
 
-
-# ==============================================================================
-# PARTE 10: DOCUMENTAÇÃO E AJUDA
-# ==============================================================================
 
 def mostrar_ajuda():
     """Mostra documentação completa do simulador."""
@@ -2422,8 +2613,8 @@ def mostrar_ajuda():
     e) Condições aleatórias
     f) Simulação Monte Carlo
     g) Carregar de JSON
-    h) Sistema com Lua (customizável)
-    i) Sistema Solar Completo (4 cenários)
+    h) Sistema com Lua
+    i) Sistema Solar Completo
     
     ════════════════════════════════════════════════════════════════════
     """
